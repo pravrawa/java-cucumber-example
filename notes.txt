@@ -1,0 +1,246 @@
+new 23
+
+1. Jenkins pipelines example - describe stages:
+
+pipeline {
+    agent any
+    tools {
+        maven 'Maven 3.3.3'
+        jdk 'jdk11'
+    }
+    stages { 
+
+        stage('Build') {
+            steps { 
+
+                git url: 'https://scm.ch.pbk/gitlab/s2x/springboot-example.git',
+                    branch: 'master',
+                    credentialsId: '4682cfb5-00d1-4084-ac22-75a2779ff25d'                   
+
+                configFileProvider(
+
+                        [configFile(fileId: 'cbdd2bf5-9250-40ba-b8ff-1bd157fded96', variable: 'MAVEN_SETTINGS')]) {
+                        sh 'mvn -s $MAVEN_SETTINGS -Dmaven.test.failure.ignore=true -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true clean package'
+
+                    }
+            }
+ 
+2. Jenkins sonar scan job/command : -U clean package $SONAR_MAVEN_GOAL : -U clean package org.sonarsource.scanner.maven:sonar-maven-plugin:3.6.0.1398:sonar
+
+3. maven build lifecycle : validate compile test package verify install deploy
+
+4. What are mandatory components of pom.xml file : Build Lifecycle (groupId, artifactId, packaging, version, scm tag), Build Plugins, dependencies
+
+5. git checkout a specific commit : git co commit id 
+
+6. how to upload artifact in Nexus : We do it using mvn deploy, maven deploy plugin.... configurations are done in settings.xml file 
+
+7. Veracode job scan - steps 
+
+8. awk command example: ls -alrth  | awk -F " " '{print $9" " }' ----> separator is used between "", can be space or : or, etc. 
+
+9. Sed command to replace a string for 2 line...not for all : sed '1,4 s/unix/linux/1g' geekfile.txt : sed '1,$ s/unix/linux/1g' geekfile.txt
+                                                               - $ for last line & 1g -First occurance 
+
+10. overview of Dockerfile - example
+
+
+NEW 27
+
+
+if [[ $(docker ps | grep ':8090') = *tomcat-sample-webapp* ]]; then
+  echo "Found a Tomcat!"
+fi
+
+
+
+if    	[[ $(docker ps | grep ':8090') = *tomcat-sample-webapp* ]]; then
+		echo "Found a Tomcat Container, Deleting it!"
+		docker stop tomcat-sample-webapp
+		docker rm tomcat-sample-webapp
+else
+		echo "Will run Tomcat Container in next stage"
+   
+fi
+
+New 28
+pipeline {
+    agent any
+	tools {
+        maven 'Maven 3.3.3'
+        //jdk 'jdk11'
+    }
+    stages {
+		stage('Clean Up Workspace') {
+            steps {
+                echo 'Deleteing old workspace..'
+				cleanWs()
+            }
+        }
+		stage('SCM Checkout') {
+            steps {
+                echo 'Check out the code from Github..'
+				git branch: 'integration', credentialsId: 'github_cred', url: 'https://github.com/pravrawa/maven-samples.git'
+				
+            }
+        }
+        stage('Build & SonarQube analysis') {
+            steps {
+                echo 'Building & Code Analysis..'
+				withSonarQubeEnv('SonarQube') {
+                sh 'mvn clean package sonar:sonar'
+				}
+            }
+        }
+		stage('JUnit Test Report') {
+            steps {
+                echo 'Publishing Junit Test reports..'
+				junit allowEmptyResults: true, testResults: 'single-module/target/surefire-reports/**.xml'
+                
+            }
+        }
+		stage('Quality Gate') {
+            steps {
+                echo 'Waiting for Quality Gate results..'
+				//timeout(time: 1, unit: 'MINUTES') {
+                //waitForQualityGate abortPipeline: false
+                //}
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker Image..'
+                sh 'docker build -t 172.31.6.126:8085/tycoon2506/sample-app:$BUILD_NUMBER .'
+            }
+        }
+		stage('Push image to Nexus Repository ') {
+            steps {
+                echo 'Uploading Docker Image to Nexus repository..'
+				withDockerRegistry(credentialsId: 'nexus-cred', url: 'http://172.31.6.126:8085') {
+				sh  'docker push 172.31.6.126:8085/tycoon2506/sample-app:$BUILD_NUMBER'
+				}
+				
+            }
+        }
+		stage('Delete Tomcat Container') {
+            steps {
+				echo 'Deleting Tomcat Container..'
+				sh 'docker stop tomcat-sample-webapp'
+				sh 'docker rm tomcat-sample-webapp'
+				
+            }
+        }
+		stage('Run Docker container on Jenkins Agent') {
+            steps {
+                echo 'Running Tomcat Container..'
+                sh 'docker run --name tomcat-sample-webapp -d -p 8090:8080 172.31.6.126:8085/tycoon2506/sample-app:$BUILD_NUMBER'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                echo 'Deploying..'
+                
+            }
+        }
+    }
+}
+
+New 26
+pipeline {
+    agent any
+	tools {
+        maven 'Maven 3.3.3'
+    }
+    stages {
+		stage('Clean Up Workspace') {
+            steps {
+                echo 'Deleteing old workspace..'
+				cleanWs()
+            }
+        }
+		stage('SCM Checkout') {
+            steps {
+                echo 'Check out the code from Github..'
+				git branch: 'integration', credentialsId: 'github_cred', url: 'https://github.com/pravrawa/maven-samples.git'
+				
+            }
+        }
+        stage('Build & SonarQube analysis') {
+            steps {
+                echo 'Building & Code Analysis..'
+				withSonarQubeEnv('SonarQube') {
+                sh 'mvn clean package sonar:sonar'
+				}
+            }
+        }
+		stage('JUnit Test Report') {
+            steps {
+                echo 'Publishing Junit Test reports..'
+				junit allowEmptyResults: true, testResults: 'single-module/target/surefire-reports/**.xml'
+                
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker Image..'
+                sh 'docker build -t 172.31.6.126:8085/tycoon2506/sample-app:$BUILD_NUMBER .'
+            }
+        }
+		stage('Push image to Nexus Repository ') {
+            steps {
+                echo 'Uploading Docker Image to Nexus repository..'
+				withDockerRegistry(credentialsId: 'nexus-cred', url: 'http://172.31.6.126:8085') {
+				sh  'docker push 172.31.6.126:8085/tycoon2506/sample-app:$BUILD_NUMBER'
+				}
+				
+            }
+        }
+		stage('Delete Tomcat Container') {
+            steps {
+				echo 'Deleting Tomcat Container..'
+				sh 'docker stop tomcat-sample-webapp'
+				sh 'docker rm tomcat-sample-webapp'
+				
+            }
+        }
+		stage('Run Docker container on Jenkins Agent') {
+            steps {
+                echo 'Running Tomcat Container..'
+                sh 'docker run --name tomcat-sample-webapp -d -p 8090:8080 172.31.6.126:8085/tycoon2506/sample-app:$BUILD_NUMBER'
+            }
+        }
+    }
+}
+
+Notes_DevOps.txt
+docker run -d --name jenkins -p 8080:8080 jenkins/jenkins:lts-jdk11 
+
+docker run --name sonarqube-in-docker -d -p 9000:9000 --group-add 0 -v /root/sonarqube/sonarqube_data:/opt/sonarqube/data sonarqube:8.9-community
+
+docker run -d -p 8081:8081 --name nexus3 -v /root/nexus/nexus_data:/opt/sonatype/nexus -e NEXUS_CONTEXT=nexus sonatype/nexus3 
+
+docker stop --time=120 <CONTAINER_NAME>
+
+
+Token created in Sonarqube for Jenkins: 0ce283e57f1e1f1e4add5ce0799c7a6d92b231cf
+
+
+docker run -p 8085:8080 --name jenkins-with-docker -v /var/run/docker.sock:/var/run/docker.sock -ti jenkins/jenkins:lts-jdk11 &
+
+1. Create dockerfile with following content
+FROM jenkins/jenkins:lts-jdk11
+USER root
+RUN curl -sSL https://get.docker.com/|sh
+USER root
+
+
+2 . Create Tag
+docker build --tag jenkins-in-docker .
+
+
+3. Run following command:
+docker run --name docker-in-jenkins-docker-container -d -p 8085:8080 -p 50000:50000 --group-add 0 -v /root/jenkins/jenkins_home:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock jenkins-in-docker
+
+docker run --name docker-in-jenkins-docker-container -d -p 8085:8080 --group-add 0 -v /root/jenkins/jenkins_home:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock jenkins-in-docker
+
+ Embedded database started. Data stored in: /opt/sonarqube/data
